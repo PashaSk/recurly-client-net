@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Infratel.Utils.Text;
+using System;
 using System.Xml;
 
 namespace Recurly
@@ -23,21 +24,10 @@ namespace Recurly
             Invoiced
         }
 
-        public enum RevenueSchedule : short
-        {
-            Evenly = 0,
-            Never,
-            AtRangeStart,
-            AtRangeEnd,
-            AtInvoice,
-            EndDate
-        }
-
         public string AccountCode { get; private set; }
         public string Uuid { get; protected set; }
         public string Description { get; set; }
         public string AccountingCode { get; set; }
-        public string ProductCode { get; set; }
         public string Origin { get; protected set; }
         public int UnitAmountInCents { get; set; }
         public int Quantity { get; set; }
@@ -46,27 +36,13 @@ namespace Recurly
         public int TotalInCents { get; protected set; }
         public string Currency { get; set; }
         public bool TaxExempt { get; set; }
-        public string TaxCode { get; set; }
-        public RevenueSchedule? RevenueScheduleType { get; set; }
-
-        public string TaxType { get; private set; }
-        public decimal? TaxRate { get; private set; }
-        public string TaxRegion { get; private set; }
 
         public AdjustmentState State { get; protected set; }
-
-        public string CreditReasonCode { get; set; }
-        public string OriginalAjustmentUuid { get; set; }
-
-        public ShippingAddress ShippingAddress { get; private set; }
-
-        public bool? Prorate { internal get; set; }
 
         public DateTime StartDate { get; protected set; }
         public DateTime? EndDate { get; protected set; }
 
-        public DateTime? CreatedAt { get ; protected set; }
-        public DateTime UpdatedAt { get; private set; }
+        public DateTime CreatedAt { get ; protected set; }
 
         private const string UrlPrefix = "/accounts/";
         private const string UrlPostfix = "/adjustments/";
@@ -76,20 +52,12 @@ namespace Recurly
 
         #region Constructors
 
-
-        public Adjustment(int unitAmountInCents, string description, int quantity = 1)
-        {
-            UnitAmountInCents = unitAmountInCents;
-            Description = description;
-            Quantity = quantity;
-        }
-
         internal Adjustment()
         {
             
         }
 
-        internal Adjustment(string accountCode, string description, string currency, int unitAmountInCents, int quantity, string accountingCode = "", bool taxExempt = false)
+        public Adjustment(string accountCode, string description, string currency, int unitAmountInCents, int quantity, string accountingCode = "", bool taxExempt = false)
         {
             AccountCode = accountCode;
             Description = description;
@@ -109,7 +77,7 @@ namespace Recurly
                     string.Format("Adjustment's UnitAmountInCents may be at most {0}.", UnitAmountMax));
         }
 
-        internal Adjustment(XmlTextReader xmlReader)
+        public Adjustment(XmlTextReader xmlReader)
         {
             ReadXml(xmlReader);
         }
@@ -124,7 +92,7 @@ namespace Recurly
         {
             // POST /accounts/<account code>/adjustments
             Client.Instance.PerformRequest(Client.HttpRequestMethod.Post,
-                UrlPrefix + Uri.EscapeDataString(AccountCode) + UrlPostfix,
+                UrlPrefix + Uri.EscapeUriString(AccountCode) + UrlPostfix,
                 WriteXml,
                 ReadXml);
         }
@@ -138,7 +106,7 @@ namespace Recurly
         {
             // DELETE /adjustments/<uuid>
             Client.Instance.PerformRequest(Client.HttpRequestMethod.Delete,
-                UrlPostfix + Uri.EscapeDataString(Uuid));
+                UrlPostfix + Uri.EscapeUriString(Uuid));
         }
 
 
@@ -170,10 +138,6 @@ namespace Recurly
 
                     case "accounting_code":
                         AccountingCode = reader.ReadElementContentAsString();
-                        break;
-
-                    case "product_code":
-                        ProductCode = reader.ReadElementContentAsString();
                         break;
 
                     case "origin":
@@ -208,34 +172,8 @@ namespace Recurly
                         TaxExempt = reader.ReadElementContentAsBoolean();
                         break;
 
-                    case "tax_code":
-                        TaxCode = reader.ReadElementContentAsString();
-                        break;
-
-                    case "tax_type":
-                        TaxType = reader.ReadElementContentAsString();
-                        break;
-
-                    case "tax_rate":
-                        TaxRate = reader.ReadElementContentAsDecimal();
-                        break;
-
-                    case "tax_region":
-                        TaxRegion = reader.ReadElementContentAsString();
-                        break;
-
-                    case "credit_reason_code":
-                        CreditReasonCode = reader.ReadElementContentAsString();
-                        break;
-
-                    case "original_adjustment_uuid":
-                        OriginalAjustmentUuid = reader.ReadElementContentAsString();
-                        break;
-
                     case "start_date":
-                        DateTime startDate;
-                        if (DateTime.TryParse(reader.ReadElementContentAsString(), out startDate))
-                            StartDate = startDate;                        
+                        StartDate = reader.ReadElementContentAsDateTime();
                         break;
 
                     case "end_date":
@@ -245,59 +183,28 @@ namespace Recurly
                         break;
 
                     case "created_at":
-                        DateTime createdAt;
-                        if (DateTime.TryParse(reader.ReadElementContentAsString(), out createdAt))
-                            CreatedAt = createdAt;
-                        break;
-
-                    case "updated_at":
-                        DateTime updatedAt;
-                        if(DateTime.TryParse(reader.ReadElementContentAsString(), out updatedAt))
-                            UpdatedAt = updatedAt;
+                        CreatedAt = reader.ReadElementContentAsDateTime();
                         break;
 
                     case "state":
                         State = reader.ReadElementContentAsString().ParseAsEnum<AdjustmentState>();
                         break;
 
-                    case "revenue_schedule_type":
-                        var revenueScheduleType = reader.ReadElementContentAsString();
-                        if (!revenueScheduleType.IsNullOrEmpty())
-                            RevenueScheduleType = revenueScheduleType.ParseAsEnum<Adjustment.RevenueSchedule>();
-                        break;
-
-                    case "shipping_address":
-                        ShippingAddress = new ShippingAddress();
-                        ShippingAddress.ReadXml(reader);
-                        break;
                 }
             }
         }
 
+        
         internal override void WriteXml(XmlTextWriter xmlWriter)
         {
-            WriteXml(xmlWriter, false);
-        }
-
-        internal void WriteEmbeddedXml(XmlTextWriter xmlWriter)
-        {
-            WriteXml(xmlWriter, true);
-        }
-
-        internal void WriteXml(XmlTextWriter xmlWriter, bool embedded = false)
-        {
-            xmlWriter.WriteStartElement("adjustment"); // Start: adjustment
+            xmlWriter.WriteStartElement("adjustment"); 
             xmlWriter.WriteElementString("description", Description);
             xmlWriter.WriteElementString("unit_amount_in_cents", UnitAmountInCents.AsString());
+            xmlWriter.WriteElementString("currency", Currency);
             xmlWriter.WriteElementString("quantity", Quantity.AsString());
             xmlWriter.WriteElementString("accounting_code", AccountingCode);
             xmlWriter.WriteElementString("tax_exempt", TaxExempt.AsString());
-            xmlWriter.WriteElementString("product_code", ProductCode);
-            if (!embedded)
-                xmlWriter.WriteElementString("currency", Currency);
-            if (RevenueScheduleType.HasValue)
-                xmlWriter.WriteElementString("revenue_schedule_type", RevenueScheduleType.Value.ToString().EnumNameToTransportCase());
-            xmlWriter.WriteEndElement(); // End: adjustment
+            xmlWriter.WriteEndElement(); 
         }
 
         #endregion
@@ -307,15 +214,10 @@ namespace Recurly
     {
         public static Adjustment Get(string uuid)
         {
-            if (string.IsNullOrWhiteSpace(uuid))
-            {
-                return null;
-            }
-
             var adjustment = new Adjustment();
             Client.Instance.PerformRequest(Client.HttpRequestMethod.Get,
-                "/adjustments/" + Uri.EscapeDataString(uuid),
-                adjustment.ReadXml);
+                "/adjustments/" + Uri.EscapeUriString(uuid),
+                adjustment.WriteXml);
             return adjustment;
         }
     }

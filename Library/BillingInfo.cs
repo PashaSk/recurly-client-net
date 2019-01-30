@@ -1,3 +1,4 @@
+﻿using Infratel.Utils.Text;
 using System;
 using System.Diagnostics;
 using System.Linq;
@@ -15,24 +16,7 @@ namespace Recurly
             MasterCard,
             AmericanExpress,
             Discover,
-            JCB,
-            Dankort,
-            Maestro,
-            Forbrugsforeningen,
-            Laser,
-            Unknown,
-            DinersClub
-        }
-
-        public enum HppType : short
-        {
-            Adyen
-        }
-
-        public enum BankAccountType : short
-        {
-            Checking,
-            Savings
+            JCB
         }
 
         /// <summary>
@@ -64,13 +48,6 @@ namespace Recurly
         public string IpAddress { get; set; }
         public string IpAddressCountry { get; private set; }
 
-
-        /// <summary>
-        /// Used to override default currency
-        /// setting this to a known value may save you a verification
-        /// </summary>
-        public string Currency { get; set; }
-
         /// <summary>
         /// Credit Card Number, first six digits
         /// </summary>
@@ -85,10 +62,6 @@ namespace Recurly
         public int ExpirationMonth { get; set; }
         public int ExpirationYear { get; set; }
 
-        public string NameOnAccount { get; set; }
-        public string RoutingNumber { get; set; }
-        public string AccountNumber { get; set; }
-        public BankAccountType AccountType { get; set; }
 
         public string Company { get; set; }
 
@@ -96,7 +69,7 @@ namespace Recurly
         /// Paypal Billing Agreement ID
         /// </summary>
         public string PaypalBillingAgreementId { get; set; }
-
+        
         /// <summary>
         /// Amazon Billing Agreement ID
         /// </summary>
@@ -133,21 +106,6 @@ namespace Recurly
 
         public string TokenId { get; set; }
 
-        public string GatewayToken { get; set; }
-
-        public string GatewayCode { get; set; }
-
-        /// <summary>
-        /// Timestamp representing the last update of this billing info
-        /// </summary>
-        public DateTime UpdatedAt { get; set; }
-
-        /// <summary>
-        /// Can be used if the payments are to be collected by external
-        /// HPP (e.g. Adyen Hosted Payments).
-        /// </summary>
-        public HppType? ExternalHppType { get; set; }
-
         private const string UrlPrefix = "/accounts/";
         private const string UrlPostfix = "/billing_info";
 
@@ -161,11 +119,6 @@ namespace Recurly
             AccountCode = account.AccountCode;
         }
 
-        internal BillingInfo(XmlTextReader reader)
-        {
-            ReadXml(reader);
-        }
-
         private BillingInfo()
         {
         }
@@ -177,11 +130,6 @@ namespace Recurly
         /// <returns></returns>
         public static BillingInfo Get(string accountCode)
         {
-            if (string.IsNullOrWhiteSpace(accountCode))
-            {
-                return null;
-            }
-
             var billingInfo = new BillingInfo();
 
             var statusCode = Client.Instance.PerformRequest(Client.HttpRequestMethod.Get,
@@ -212,7 +160,7 @@ namespace Recurly
 
         private static string BillingInfoUrl(string accountCode)
         {
-            return UrlPrefix + Uri.EscapeDataString(accountCode) + UrlPostfix;
+            return UrlPrefix + Uri.EscapeUriString(accountCode) + UrlPostfix;
         }
 
         internal override void ReadXml(XmlTextReader reader)
@@ -227,10 +175,6 @@ namespace Recurly
 
                 switch (reader.Name)
                 {
-                    case "billing_info":
-                        // The element's opening tag - nothing to do
-                        break;
-
                     case "account":
                         var href = reader.GetAttribute("href");
                         AccountCode = Uri.UnescapeDataString(href.Substring(href.LastIndexOf("/") + 1));
@@ -242,10 +186,6 @@ namespace Recurly
 
                     case "last_name":
                         LastName = reader.ReadElementContentAsString();
-                        break;
-
-                    case "name_on_account":
-                        NameOnAccount = reader.ReadElementContentAsString();
                         break;
 
                     case "company":
@@ -293,23 +233,17 @@ namespace Recurly
                         break;
 
                     case "card_type":
-                        var type = reader.ReadElementContentAsString();
-                        if (!type.IsNullOrEmpty())
-                            CardType = type.ParseAsEnum<CreditCardType>();
+                        CardType = reader.ReadElementContentAsString().ParseAsEnum<CreditCardType>();
                         break;
 
                     case "year":
-                        int y;
-                        if (int.TryParse(reader.ReadElementContentAsString(), out y))
-                            ExpirationYear = y;
+                        ExpirationYear = reader.ReadElementContentAsInt();
+                        break;
+                            
+                    case "month":
+                        ExpirationMonth = reader.ReadElementContentAsInt();
                         break;
 
-                    case "month":
-                        int m;
-                        if (int.TryParse(reader.ReadElementContentAsString(), out m))
-                            ExpirationMonth = m;
-                        break;
-                        
                     case "first_six":
                         FirstSix = reader.ReadElementContentAsString();
                         break;
@@ -325,30 +259,6 @@ namespace Recurly
                     case "amazon_billing_agreement_id":
                         AmazonBillingAgreementId = reader.ReadElementContentAsString();
                         break;
-
-                    case "routing_number":
-                        RoutingNumber = reader.ReadElementContentAsString();
-                        break;
-
-                    case "account_type":
-                        AccountType = reader.ReadElementContentAsString().ParseAsEnum<BankAccountType>();
-                        break;
-
-                    case "external_hpp_type":
-                        ExternalHppType = reader.ReadElementContentAsString().ParseAsEnum<HppType>();
-                        break;
-
-                    case "updated_at":
-                        DateTime d;
-                        if (DateTime.TryParse(reader.ReadElementContentAsString(), out d))
-                        {
-                            UpdatedAt = d;
-                        }
-                        break;
-
-                    default:
-                        Debug.WriteLine("Recurly Client Library: Unexpected XML field in response - " + reader.Name);
-                        break;
                 }
             }
         }
@@ -356,74 +266,30 @@ namespace Recurly
         internal override void WriteXml(XmlTextWriter xmlWriter)
         {
             xmlWriter.WriteStartElement("billing_info"); // Start: billing_info
+            xmlWriter.WriteStringIfValid("first_name", FirstName);
+            xmlWriter.WriteStringIfValid("last_name", LastName);
+            xmlWriter.WriteStringIfValid("address1", Address1);
+            xmlWriter.WriteStringIfValid("address2", Address2);
+            xmlWriter.WriteStringIfValid("city", City);
+            xmlWriter.WriteStringIfValid("state", State);
+            xmlWriter.WriteStringIfValid("zip", PostalCode);
+            xmlWriter.WriteStringIfValid("country", Country);
+            xmlWriter.WriteStringIfValid("phone", PhoneNumber);
 
-            //if a recurly js token is supplied we don't want to send billing info here
-            if (string.IsNullOrEmpty(TokenId))
+            xmlWriter.WriteStringIfValid("vat_number", VatNumber);
+
+            if (!IpAddress.IsNullOrEmpty())
+                xmlWriter.WriteElementString("ip_address", IpAddress);
+            else
+                Debug.WriteLine("{0:dd.MM.yyyy HH:mm:ss.ffff}: Recurly Client Library: Recording IP Address is strongly recommended.",DateTime.UtcNow);
+
+            if (!CreditCardNumber.IsNullOrEmpty())
             {
-                xmlWriter.WriteStringIfValid("first_name", FirstName);
-                xmlWriter.WriteStringIfValid("last_name", LastName);
-                xmlWriter.WriteStringIfValid("company", Company);
-                xmlWriter.WriteStringIfValid("name_on_account", NameOnAccount);
-                xmlWriter.WriteStringIfValid("address1", Address1);
-                xmlWriter.WriteStringIfValid("address2", Address2);
-                xmlWriter.WriteStringIfValid("city", City);
-                xmlWriter.WriteStringIfValid("state", State);
-                xmlWriter.WriteStringIfValid("zip", PostalCode);
-                xmlWriter.WriteStringIfValid("country", Country);
-                xmlWriter.WriteStringIfValid("phone", PhoneNumber);
-                xmlWriter.WriteStringIfValid("vat_number", VatNumber);
-                xmlWriter.WriteStringIfValid("currency", Currency);
+                xmlWriter.WriteElementString("number", CreditCardNumber);
+                xmlWriter.WriteElementString("month", ExpirationMonth.AsString());
+                xmlWriter.WriteElementString("year", ExpirationYear.AsString());
 
-                if (!IpAddress.IsNullOrEmpty())
-                    xmlWriter.WriteElementString("ip_address", IpAddress);
-                else
-                    Debug.WriteLine("Recurly Client Library: Recording IP Address is strongly recommended.");
-
-                if (!CreditCardNumber.IsNullOrEmpty())
-                {
-                    xmlWriter.WriteElementString("number", CreditCardNumber);
-                    xmlWriter.WriteElementString("month", ExpirationMonth.AsString());
-                    xmlWriter.WriteElementString("year", ExpirationYear.AsString());
-
-                    xmlWriter.WriteStringIfValid("verification_value", VerificationValue);
-                }
-
-                if (!AccountNumber.IsNullOrEmpty())
-                {
-                    xmlWriter.WriteElementString("routing_number", RoutingNumber);
-                    xmlWriter.WriteElementString("account_number", AccountNumber);
-                    xmlWriter.WriteElementString("account_type", AccountType.ToString().EnumNameToTransportCase());
-                }
-
-                if (!PaypalBillingAgreementId.IsNullOrEmpty())
-                {
-                    xmlWriter.WriteElementString("paypal_billing_agreement_id", PaypalBillingAgreementId);
-                }
-
-                if (!AmazonBillingAgreementId.IsNullOrEmpty())
-                {
-                    xmlWriter.WriteElementString("amazon_billing_agreement_id", AmazonBillingAgreementId);
-                }
-
-                if (ExternalHppType.HasValue)
-                {
-                    xmlWriter.WriteElementString("external_hpp_type", ExternalHppType.Value.ToString().EnumNameToTransportCase());
-
-                }
-
-                if (!GatewayCode.IsNullOrEmpty())
-                {
-                    xmlWriter.WriteElementString("gateway_code", GatewayCode);
-                    xmlWriter.WriteElementString("gateway_token", GatewayToken);
-
-                    // EnumNameToTransportCase() turns MasterCard into "master_card",
-                    // but it needs to be "master" for the server to accept it.
-                    // Check for this edge case before writing the card_type tag.
-                    var card = CardType.ToString().EnumNameToTransportCase();
-                    if (card == "master_card") card = "master";
-
-                    xmlWriter.WriteElementString("card_type", card);
-                }
+                xmlWriter.WriteStringIfValid("verification_value", VerificationValue);
             }
 
             xmlWriter.WriteStringIfValid("token_id", TokenId);
@@ -451,7 +317,7 @@ namespace Recurly
 
         public override int GetHashCode()
         {
-            return AccountCode?.GetHashCode() ?? 0;
+            return AccountCode.GetHashCode();
         }
 
         #endregion

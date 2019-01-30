@@ -30,11 +30,6 @@ namespace Recurly
             get { return HasPrevPage() ? new SubscriptionAddOnList(PrevUrl) : RecurlyList.Empty<SubscriptionAddOn>(); }
         }
 
-        public override bool includeEmptyTag()
-        {
-            return true;
-        }
-
         internal override void ReadXml(XmlTextReader reader)
         {
             while (reader.Read())
@@ -63,16 +58,14 @@ namespace Recurly
         /// <param name="quantity">The quantity of the add-on. Optional, default is 1.</param>
         public void Add(AddOn planAddOn, int quantity = 1)
         {
-            int amount = 0;
-            if (planAddOn.UnitAmountInCents.Count > 0 && !planAddOn.UnitAmountInCents.TryGetValue(_subscription.Currency, out amount))
+            int amount;
+            if (!planAddOn.UnitAmountInCents.TryGetValue(_subscription.Currency, out amount))
             {
                 throw new ValidationException(
                     "The given AddOn does not have UnitAmountInCents for the currency of the subscription (" + _subscription.Currency + ")."
-                    , new Errors());
+                    , null);
             }
-            int? unitAmountInCents = planAddOn.AddOnType.HasValue && (planAddOn.AddOnType.Value == AddOn.Type.Usage) ? (int?)null : amount;
-
-            var sub = new SubscriptionAddOn(planAddOn.AddOnCode, planAddOn.AddOnType, unitAmountInCents, quantity);
+            var sub = new SubscriptionAddOn(planAddOn.AddOnCode, amount, quantity);
             base.Add(sub);
         }
 
@@ -91,7 +84,7 @@ namespace Recurly
         /// <param name="unitAmountInCents">Overrides the UnitAmountInCents of the add-on.</param>
         public void Add(AddOn planAddOn, int quantity, int unitAmountInCents)
         {
-            var sub = new SubscriptionAddOn(planAddOn.AddOnCode, planAddOn.AddOnType, unitAmountInCents, quantity);
+            var sub = new SubscriptionAddOn(planAddOn.AddOnCode, unitAmountInCents, quantity);
             base.Add(sub);
         }
 
@@ -99,28 +92,13 @@ namespace Recurly
         // sub.AddOns.Add(code, quantity); unitInCents=this.Plan.UnitAmountInCents[this.Currency]
         // sub.AddOns.Add(code); 1, unitInCents=this.Plan.UnitAmountInCents[this.Currency]
         public void Add(string planAddOnCode, int quantity=1)
-        {
-            var unitAmount = _subscription.Plan.AddOns.Find(ao => ao.AddOnCode == planAddOnCode).UnitAmountInCents[_subscription.Currency];
-            var sub = new SubscriptionAddOn(planAddOnCode, unitAmount, quantity);
+        {            
+            var sub = new SubscriptionAddOn(planAddOnCode, quantity);
             base.Add(sub);
         }
-
-        public void Add(string planAddOnCode, AddOn.Type addOnType, int quantity = 1)
-        {
-            var unitAmount = _subscription.Plan.AddOns.Find(ao => ao.AddOnCode == planAddOnCode).UnitAmountInCents[_subscription.Currency];
-            var sub = new SubscriptionAddOn(planAddOnCode, addOnType, unitAmount, quantity);
-            base.Add(sub);
-        }
-
         public void Add(string planAddOnCode, int quantity, int unitAmountInCents)
         {
             var sub = new SubscriptionAddOn(planAddOnCode, unitAmountInCents, quantity);
-            base.Add(sub);
-        }
-
-        public void Add(string planAddOnCode, AddOn.Type addOnType, int quantity, int unitAmountInCents)
-        {
-            var sub = new SubscriptionAddOn(planAddOnCode, addOnType, unitAmountInCents, quantity);
             base.Add(sub);
         }
     }

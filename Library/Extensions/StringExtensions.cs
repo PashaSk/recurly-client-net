@@ -2,40 +2,41 @@ using System;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using Infratel.Utils.Text;
 
 namespace Recurly
 {
     public static class StringExtensions
     {
-        /// <summary>
-        /// Convenience implementation of the built-in <see cref="String.IsNullOrEmpty(string)"/> method. Tests if the given <see cref="System.String"/> <paramref name="source"/> is null or empty.
-        /// </summary>
-        /// <param name="source">The <see cref="System.String"/> to test.</param>
-        /// <returns>true if the <see cref="System.String"/> <paramref name="source"/> is null or empty, false otherwise.</returns>
-        public static bool IsNullOrEmpty(this string source)
-        {
-            return string.IsNullOrEmpty(source);
-        }
+        ///// <summary>
+        ///// Convenience implementation of the built-in <see cref="String.IsNullOrEmpty(string)"/> method. Tests if the given <see cref="System.String"/> <paramref name="source"/> is null or empty.
+        ///// </summary>
+        ///// <param name="source">The <see cref="System.String"/> to test.</param>
+        ///// <returns>true if the <see cref="System.String"/> <paramref name="source"/> is null or empty, false otherwise.</returns>
+        //public static bool IsNullOrEmpty(this string source)
+        //{
+        //    return string.IsNullOrEmpty(source);
+        //}
 
-        /// <summary>
-        /// Determines if the given <see cref="System.String"/> is null or contains only whitespace.
-        /// </summary>
-        /// <param name="source">The <see cref="System.String"/> to test.</param>
-        /// <returns>true if the <see cref="System.String"/> <paramref name="source"/> is null or contains only whitespace, false otherwise.</returns>
-        public static bool IsNullOrWhiteSpace(this string source)
-        {
-            return source.SafeTrim().IsNullOrEmpty();
-        }
+        ///// <summary>
+        ///// Determines if the given <see cref="System.String"/> is null or contains only whitespace.
+        ///// </summary>
+        ///// <param name="source">The <see cref="System.String"/> to test.</param>
+        ///// <returns>true if the <see cref="System.String"/> <paramref name="source"/> is null or contains only whitespace, false otherwise.</returns>
+        //public static bool IsNullOrWhiteSpace(this string source)
+        //{
+        //    return source.SafeTrim().IsNullOrEmpty();
+        //}
 
-        /// <summary>
-        /// Convenience overload of <see cref="String.Trim()"/> that protects against <see cref="NullReferenceException"/>s by returning null if <paramref name="source"/> is null.
-        /// </summary>
-        /// <param name="source">The <see cref="System.String"/> to trim leading and trailing whitespace from.</param>
-        /// <returns>null if <paramref name="source"/> is null, the results of <see cref="String.Trim()"/> on <paramref name="source"/> otherwise.</returns>
-        public static string SafeTrim(this string source)
-        {
-            return source == null ? null : source.Trim();
-        }
+        ///// <summary>
+        ///// Convenience overload of <see cref="String.Trim()"/> that protects against <see cref="NullReferenceException"/>s by returning null if <paramref name="source"/> is null.
+        ///// </summary>
+        ///// <param name="source">The <see cref="System.String"/> to trim leading and trailing whitespace from.</param>
+        ///// <returns>null if <paramref name="source"/> is null, the results of <see cref="String.Trim()"/> on <paramref name="source"/> otherwise.</returns>
+        //public static string SafeTrim(this string source)
+        //{
+        //    return source == null ? null : source.Trim();
+        //}
 
         /// <summary>
         /// Attempts to parse the <see cref="System.String"/> <paramref name="source"/> to the given Enumeration <typeparamref name="T"/>, after converting the string to PascalCase.

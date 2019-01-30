@@ -1,4 +1,12 @@
-﻿using System.Configuration;
+﻿/**********************************************************************
+* Copyright (c) 1999-2014 Infratel, Inc.
+* All rights reserved.
+* http://www.infratel.com
+*
+***********************************************************************/
+
+
+using System.Configuration;
 
 namespace Recurly.Configuration
 {
@@ -54,6 +62,17 @@ namespace Recurly.Configuration
         {
             get { return (int)base["pageSize"]; }
             set { base["pageSize"] = value; }
+        }
+
+
+        /// <summary>
+        /// PayPal accounts allowed to use PayPal payments
+        /// </summary>
+        [ConfigurationProperty("payPalAccounts", IsRequired = false, DefaultValue = "All")]
+        public string PayPalAccounts
+        {
+            get { return (string)base["payPalAccounts"]; }
+            set { base["payPalAccounts"] = value; }
         }
       
         #endregion

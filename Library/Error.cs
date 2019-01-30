@@ -7,36 +7,34 @@ namespace Recurly
 {
     /// <summary>
     /// An individual error message.
-    /// For more information, please visit https://dev.recurly.com/docs/api-validation-errors
+    /// For more information, please visit http://docs.recurly.com/api/errors
     /// </summary>
     public class Error
     {
         /// <summary>
         /// Error message
         /// </summary>
-        public string Message { get; set; }
+        public string Message { get; internal set; }
 
         /// <summary>
         /// Field causing the error, if appropriate.
         /// </summary>
-        public string Field { get; set; }
+        public string Field { get; internal set; }
 
         /// <summary>
         /// Error code set for certain transaction failures.
         /// </summary>
-        public string Code { get; set; }
+        public string Code { get; internal set; }
 
         /// <summary>
         /// Error symbol
         /// </summary>
-        public string Symbol { get; set; }
+        public string Symbol { get; internal set; }
 
         /// <summary>
         /// Error details
         /// </summary>
-        public string Details { get; set; }
-
-        public Error() { }
+        public string Details { get; internal set; }
 
         internal Error(XmlTextReader reader, bool fromList)
         {
@@ -60,8 +58,7 @@ namespace Recurly
             // single error returned
             // <error>
             //    <symbol>asdf</symbol>
-            //    <description>asdfasdf</description>
-            //    <details>asdfasdfasdfasdf</details>
+            //    <description>asdfasdf </symbol>
             // </error>
             while (reader.Read())
             {
@@ -89,25 +86,41 @@ namespace Recurly
                 , Message, Field, Code, Symbol, Details);
         }
 
-        internal static Error[] ParseErrors(XmlTextReader xmlReader)
+        internal static Error[] ReadResponseAndParseErrors(HttpWebResponse response)
         {
- 
-            var errors = new List<Error>();                  
-            bool list = false;
+            if (response == null)
+                return new Error[0];
 
-            while (xmlReader.Read())
+            using (var responseStream = response.GetResponseStream())
             {
-                if (xmlReader.Name == "errors" && xmlReader.NodeType == XmlNodeType.EndElement)
-                    break;
+                var errors = new List<Error>();
 
-                if (xmlReader.Name == "errors" && xmlReader.NodeType == XmlNodeType.Element)
-                    list = true;
+                try
+                {
+                    using (var xmlReader = new XmlTextReader(responseStream))
+                    {
+                        bool list = false;
 
-                if (xmlReader.Name == "error" && xmlReader.NodeType == XmlNodeType.Element)
-                    errors.Add(new Error(xmlReader, list));
+                        while (xmlReader.Read())
+                        {
+                            if (xmlReader.Name == "errors" && xmlReader.NodeType == XmlNodeType.EndElement)
+                                break;
+
+                            if (xmlReader.Name == "errors" && xmlReader.NodeType == XmlNodeType.Element)
+                                list = true;
+
+                            if (xmlReader.Name == "error" && xmlReader.NodeType == XmlNodeType.Element)
+                                errors.Add(new Error(xmlReader, list));
+                        }
+                    }
+                }
+                catch (XmlException)
+                {
+                    // Do nothing
+                }
+
+                return errors.ToArray();
             }
-
-            return errors.ToArray();          
         }
 
         /// <summary>

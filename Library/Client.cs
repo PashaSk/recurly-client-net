@@ -1,10 +1,13 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml;
+using System.Web;
+using Infratel.Utils.Text;
 using Recurly.Configuration;
 
 [assembly: InternalsVisibleTo("Recurly.Test")]
@@ -18,6 +21,8 @@ namespace Recurly
     {
         // refactored all these settings for increased testability
         public Settings Settings { get; protected set; }
+
+        public const int TooManyRequestHttpStatus = 429;        
 
         private static Client _instance;
         internal static Client Instance
@@ -33,13 +38,6 @@ namespace Recurly
         internal static void ChangeInstance(Client client)
         {
             _instance = client;
-        }
-
-        internal static XmlTextReader BuildXmlTextReader(Stream stream)
-        {
-            var reader = new XmlTextReader(stream);
-            reader.DtdProcessing = DtdProcessing.Prohibit;
-            return reader;
         }
 
         internal void ApplySettings(Settings settings)
@@ -68,11 +66,6 @@ namespace Recurly
         }
 
         /// <summary>
-        /// Delegate to read a raw HTTP response from the server.
-        /// </summary>
-        public delegate void ReadResponseDelegate(HttpWebResponse response);
-
-        /// <summary>
         /// Delegate to read the XML response from the server.
         /// </summary>
         /// <param name="xmlReader"></param>
@@ -83,7 +76,7 @@ namespace Recurly
         /// </summary>
         /// <param name="xmlReader"></param>
         /// <param name="records"></param>
-        public delegate void ReadXmlListDelegate(XmlTextReader xmlReader, string start, string next, string prev);
+        public delegate void ReadXmlListDelegate(XmlTextReader xmlReader, int records, string start, string next, string prev);
 
         /// <summary>
         /// Delegate to write the XML request to the server.
@@ -94,61 +87,49 @@ namespace Recurly
 
         public HttpStatusCode PerformRequest(HttpRequestMethod method, string urlPath)
         {
-            return PerformRequest(method, urlPath, null, null, null, null);
+            return PerformRequest(method, urlPath, null, null, null);
         }
 
         public HttpStatusCode PerformRequest(HttpRequestMethod method, string urlPath,
             ReadXmlDelegate readXmlDelegate)
         {
-            return PerformRequest(method, urlPath, null, readXmlDelegate, null, null);
+            return PerformRequest(method, urlPath, null, readXmlDelegate, null);
         }
 
         public HttpStatusCode PerformRequest(HttpRequestMethod method, string urlPath,
             WriteXmlDelegate writeXmlDelegate)
         {
-            return PerformRequest(method, urlPath, writeXmlDelegate, null, null, null);
+            return PerformRequest(method, urlPath, writeXmlDelegate, null, null);
         }
 
         public HttpStatusCode PerformRequest(HttpRequestMethod method, string urlPath,
             WriteXmlDelegate writeXmlDelegate, ReadXmlDelegate readXmlDelegate)
         {
-            return PerformRequest(method, urlPath, writeXmlDelegate, readXmlDelegate, null, null);
+            return PerformRequest(method, urlPath, writeXmlDelegate, readXmlDelegate, null);
         }
 
         public HttpStatusCode PerformRequest(HttpRequestMethod method, string urlPath,
             ReadXmlListDelegate readXmlListDelegate)
         {
-            return PerformRequest(method, urlPath, null, null, readXmlListDelegate, null);
-        }
-
-        public HttpStatusCode PerformRequest(HttpRequestMethod method, string urlPath,
-            WriteXmlDelegate writeXmlDelegate, ReadResponseDelegate responseDelegate)
-        {
-            return PerformRequest(method, urlPath, writeXmlDelegate, null, null, responseDelegate);
+            return PerformRequest(method, urlPath, null, null, readXmlListDelegate);
         }
 
         protected virtual HttpStatusCode PerformRequest(HttpRequestMethod method, string urlPath,
-            WriteXmlDelegate writeXmlDelegate, ReadXmlDelegate readXmlDelegate, ReadXmlListDelegate readXmlListDelegate, ReadResponseDelegate reseponseDelegate)
+            WriteXmlDelegate writeXmlDelegate, ReadXmlDelegate readXmlDelegate, ReadXmlListDelegate readXmlListDelegate)
         {
             var url = Settings.GetServerUri(urlPath);
 #if (DEBUG)
             Console.WriteLine("Requesting " + method + " " + url);
 #endif
             var request = (HttpWebRequest)WebRequest.Create(url);
-
-            if (!request.RequestUri.Host.EndsWith(Settings.ValidDomain)) {
-                throw new RecurlyException("Domain " + request.RequestUri.Host + " is not a valid Recurly domain");
-            }
-
             request.Accept = "application/xml";      // Tells the server to return XML instead of HTML
             request.ContentType = "application/xml; charset=utf-8"; // The request is an XML document
             request.SendChunked = false;             // Send it all as one request
             request.UserAgent = Settings.UserAgent;
             request.Headers.Add(HttpRequestHeader.Authorization, Settings.AuthorizationHeaderValue);
-            request.Headers.Add("X-Api-Version", Settings.RecurlyApiVersion);
             request.Method = method.ToString().ToUpper();
 
-            Console.WriteLine(String.Format("Recurly: Requesting {0} {1}", request.Method, request.RequestUri));
+            Debug.WriteLine(String.Format("{0}: Recurly: Requesting {1} {2}", DateTime.UtcNow.ToLog(), request.Method, request.RequestUri));
 
             if ((method == HttpRequestMethod.Post || method == HttpRequestMethod.Put) && (writeXmlDelegate != null))
             {
@@ -170,8 +151,17 @@ namespace Recurly
             {
                 using (var response = (HttpWebResponse)request.GetResponse())
                 {
+                    if(!string.IsNullOrEmpty(response.Headers["Recurly-Deprecated"]))
+                    {
+                        bool isDeprecated;
+                        if (bool.TryParse(response.Headers["Recurly-Deprecated"], out isDeprecated) && isDeprecated)
+                        {
+                            Trace.TraceError("{0}: Recurly Library Deprecated: Deprecation date: {1} ", DateTime.UtcNow.ToLog(), response.Headers["Recurly-Sunset-Date"]);
+                        }
+                    }
 
-                    ReadWebResponse(response, readXmlDelegate, readXmlListDelegate, reseponseDelegate);
+
+                    ReadWebResponse(response, readXmlDelegate, readXmlListDelegate);
                     return response.StatusCode;
 
                 }
@@ -182,9 +172,9 @@ namespace Recurly
 
                 var response = (HttpWebResponse)ex.Response;
                 var statusCode = response.StatusCode;
-                Errors errors;
+                Error[] errors;
 
-                Console.WriteLine(String.Format("Recurly Library Received: {0} - {1}", (int)statusCode, statusCode));
+                Debug.WriteLine(String.Format("{0}: Recurly Library Received: {1} - {2}", DateTime.UtcNow.ToLog(), (int)statusCode, statusCode));
 
                 switch (response.StatusCode)
                 {
@@ -192,39 +182,40 @@ namespace Recurly
                     case HttpStatusCode.Accepted:
                     case HttpStatusCode.Created:
                     case HttpStatusCode.NoContent:
-                        ReadWebResponse(response, readXmlDelegate, readXmlListDelegate, reseponseDelegate);
+                        ReadWebResponse(response, readXmlDelegate, readXmlListDelegate);
 
                         return HttpStatusCode.NoContent;
 
                     case HttpStatusCode.NotFound:
-                        errors = Errors.ReadResponseAndParseErrors(response);
-                        if (errors.ValidationErrors.HasAny())
-                            throw new NotFoundException(errors.ValidationErrors[0].Message, errors);
+                        errors = Error.ReadResponseAndParseErrors(response);
+                        if (errors.Length > 0)
+                            throw new NotFoundException(errors[0].Message, errors);
                         throw new NotFoundException("The requested object was not found.", errors);
 
                     case HttpStatusCode.Unauthorized:
                     case HttpStatusCode.Forbidden:
-                        errors = Errors.ReadResponseAndParseErrors(response);
+                        errors = Error.ReadResponseAndParseErrors(response);
                         throw new InvalidCredentialsException(errors);
 
-                    case HttpStatusCode.BadRequest:
                     case HttpStatusCode.PreconditionFailed:
-                        errors = Errors.ReadResponseAndParseErrors(response);
+                    case HttpStatusCode.BadRequest:
+                        errors = Error.ReadResponseAndParseErrors(response);
                         throw new ValidationException(errors);
 
                     case HttpStatusCode.ServiceUnavailable:
+                    case (HttpStatusCode)TooManyRequestHttpStatus:
                         throw new TemporarilyUnavailableException();
 
                     case HttpStatusCode.InternalServerError:
-                        errors = Errors.ReadResponseAndParseErrors(response);
+                        errors = Error.ReadResponseAndParseErrors(response);
                         throw new ServerException(errors);
                 }
 
                 if ((int)statusCode == ValidationException.HttpStatusCode) // Unprocessable Entity
                 {
-                    errors = Errors.ReadResponseAndParseErrors(response);
-                    if (errors.ValidationErrors.HasAny()) Console.WriteLine(errors.ValidationErrors[0].ToString());
-                    else Console.WriteLine("Client Error: " + response.ToString());
+                    errors = Error.ReadResponseAndParseErrors(response);
+                    if (errors.Length > 0) Debug.WriteLine(string.Format("{0}: {1}", DateTime.UtcNow.ToLog(), errors[0].ToString()));
+                    else Debug.WriteLine(string.Format("{0}: Client Error: {1} ", DateTime.UtcNow.ToLog(), response.ToString()));
                     throw new ValidationException(errors);
                 }
 
@@ -252,7 +243,7 @@ namespace Recurly
             request.Method = "GET";
             request.Headers.Add("Accept-Language", acceptLanguage);
 
-            Console.WriteLine(String.Format("Recurly: Requesting {0} {1}", request.Method, request.RequestUri));
+            Debug.WriteLine(String.Format("{0}: Recurly: Requesting {1} {2}", DateTime.UtcNow.ToLog(), request.Method, request.RequestUri));
 
             try
             {
@@ -280,9 +271,9 @@ namespace Recurly
                 if (ex.Response == null) throw;
                 var response = (HttpWebResponse)ex.Response;
                 var statusCode = response.StatusCode;
-                Errors errors;
+                Error[] errors;
 
-                Console.WriteLine(String.Format("Recurly Library Received: {0} - {1}", (int)statusCode, statusCode));
+                Debug.WriteLine(String.Format("{0}: Recurly Library Received: {1} - {2}", DateTime.UtcNow.ToLog(), (int)statusCode, statusCode));
 
                 switch (response.StatusCode)
                 {
@@ -294,32 +285,32 @@ namespace Recurly
                         return null;
 
                     case HttpStatusCode.NotFound:
-                        errors = Errors.ReadResponseAndParseErrors(response);
-
-                        if (errors.ValidationErrors.HasAny())
-                            throw new NotFoundException(errors.ValidationErrors[0].Message, errors);
+                        errors = Error.ReadResponseAndParseErrors(response);
+                        if (errors.Length > 0)
+                            throw new NotFoundException(errors[0].Message, errors);
                         throw new NotFoundException("The requested object was not found.", errors);
 
                     case HttpStatusCode.Unauthorized:
                     case HttpStatusCode.Forbidden:
-                        errors = Errors.ReadResponseAndParseErrors(response);
+                        errors = Error.ReadResponseAndParseErrors(response);
                         throw new InvalidCredentialsException(errors);
 
                     case HttpStatusCode.PreconditionFailed:
-                        errors = Errors.ReadResponseAndParseErrors(response);
+                        errors = Error.ReadResponseAndParseErrors(response);
                         throw new ValidationException(errors);
 
                     case HttpStatusCode.ServiceUnavailable:
+                    case (HttpStatusCode)TooManyRequestHttpStatus:
                         throw new TemporarilyUnavailableException();
 
                     case HttpStatusCode.InternalServerError:
-                        errors = Errors.ReadResponseAndParseErrors(response);
+                        errors = Error.ReadResponseAndParseErrors(response);
                         throw new ServerException(errors);
                 }
 
                 if ((int)statusCode == ValidationException.HttpStatusCode) // Unprocessable Entity
                 {
-                    errors = Errors.ReadResponseAndParseErrors(response);
+                    errors = Error.ReadResponseAndParseErrors(response);
                     throw new ValidationException(errors);
                 }
 
@@ -327,43 +318,40 @@ namespace Recurly
             }
         }
 
-        protected virtual void ReadWebResponse(HttpWebResponse response, ReadXmlDelegate readXmlDelegate, ReadXmlListDelegate readXmlListDelegate, ReadResponseDelegate responseDelegate)
+        protected virtual void ReadWebResponse(HttpWebResponse response, ReadXmlDelegate readXmlDelegate, ReadXmlListDelegate readXmlListDelegate)
         {
-            if (readXmlDelegate == null && readXmlListDelegate == null && responseDelegate == null) return;
+            if (readXmlDelegate == null && readXmlListDelegate == null) return;
 #if (DEBUG)
-            Console.WriteLine("Got Response:");
-            Console.WriteLine("Status code: " + response.StatusCode);
+            Debug.WriteLine(string.Format("{0}: Got Response:", DateTime.UtcNow.ToLog()));
+            Debug.WriteLine(string.Format("{0}: Status code: {1}", DateTime.UtcNow.ToLog(), response.StatusCode));
 
             foreach (var header in response.Headers)
             {
-                Console.WriteLine(header + ": " + response.Headers[header.ToString()]);
+                Debug.WriteLine(header + ": " + response.Headers[header.ToString()]);
             }
-#endif
+
             var responseStream = CopyAndClose(response.GetResponseStream());
             var reader = new StreamReader(responseStream);
 
-#if (DEBUG)
             string line;
             while ((line = reader.ReadLine()) != null)
             {
-                Console.WriteLine(line);
-            }
-#endif
-            if (responseDelegate != null)
-            {
-                responseDelegate(response);
-                return;
+                Debug.WriteLine(line);
             }
 
             responseStream.Position = 0;
-            using (var xmlReader = Client.BuildXmlTextReader(responseStream))
+            using (var xmlReader = new XmlTextReader(responseStream))
             {
-
                 // Check for pagination
-                var cursor = string.Empty;
+                var records = -1;
                 string start = null;
                 string next = null;
                 string prev = null;
+
+                if (null != response.Headers["X-Records"])
+                {
+                    Int32.TryParse(response.Headers["X-Records"], out records);
+                }
 
                 var link = response.Headers["Link"];
 
@@ -372,17 +360,48 @@ namespace Recurly
                     start = link.GetUrlFromLinkHeader("start");
                     next = link.GetUrlFromLinkHeader("next");
                     prev = link.GetUrlFromLinkHeader("prev");
-                    readXmlListDelegate(xmlReader, start, next, prev);
-                } else if (readXmlListDelegate != null)
-                {
-                    readXmlListDelegate(xmlReader, start, next, prev);
                 }
-                else if (response.StatusCode != HttpStatusCode.NoContent)
-                {
+
+                if (records >= 0)
+                    readXmlListDelegate(xmlReader, records, start, next, prev);
+                else
                     readXmlDelegate(xmlReader);
-                }
             }
 
+#else
+
+            using(var responseStream = response.GetResponseStream())
+            {
+
+                using(var xmlReader = new XmlTextReader(responseStream))
+                {
+                    // Check for pagination
+                    var records = -1;
+                    string start = null;
+                    string next = null;
+                    string prev = null;
+
+                    if (null != response.Headers["X-Records"])
+                    {
+                        Int32.TryParse(response.Headers["X-Records"], out records);
+                    }
+
+                    var link = response.Headers["Link"];
+
+                    if (!link.IsNullOrEmpty())
+                    {
+                        start = link.GetUrlFromLinkHeader("start");
+                        next = link.GetUrlFromLinkHeader("next");
+                        prev = link.GetUrlFromLinkHeader("prev");
+                    }
+
+                    if (records >= 0)
+                        readXmlListDelegate(xmlReader, records, start, next, prev);
+                    else
+                        readXmlDelegate(xmlReader);
+                }
+            }
+#endif
         }
 
         protected virtual void WritePostParameters(Stream outputStream, WriteXmlDelegate writeXmlDelegate)

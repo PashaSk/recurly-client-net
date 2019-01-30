@@ -6,18 +6,16 @@
     /// </summary>
     public class ValidationException : RecurlyException
     {
-        public ValidationException() { }
-
         /// <summary>
         /// HTTP Status Code 422 is "Unprocessable Entity"
         /// </summary>
         internal const int HttpStatusCode = 422;
 
-        internal ValidationException(Errors errors)
+        internal ValidationException(Error[] errors)
             : base("The information being saved is not valid.", errors)
         { }
 
-        internal ValidationException(string message, Errors errors)
+        internal ValidationException(string message, Error[] errors)
             : base(message, errors)
         { }
     }

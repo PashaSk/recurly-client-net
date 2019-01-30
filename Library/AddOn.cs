@@ -6,26 +6,11 @@ namespace Recurly
 {
     public class AddOn : RecurlyEntity
     {
-        public enum Type
-        {
-            Fixed,
-            Usage
-        }
 
-        public string PlanCode { get; set; }
+        public string PlanCode { get; private set; }
         public string AddOnCode { get; set; }
         public string Name { get; set; }
-        public int? DefaultQuantity { get; set; }
-        public bool? DisplayQuantityOnHostedPage { get; set; }
-        public string TaxCode { get; set; }
-        public bool? Optional { get; set; }
-        public string AccountingCode { get; set; }
-        public long? MeasuredUnitId { get; set; }
-        public Type? AddOnType { get; set; }
-        public Usage.Type? UsageType { get; set; }
-        public DateTime CreatedAt { get; private set; }
-        public DateTime UpdatedAt { get; private set; }
-        public Adjustment.RevenueSchedule? RevenueScheduleType { get; set; }
+
 
         private Dictionary<string, int> _unitAmountInCents;
         /// <summary>
@@ -35,6 +20,12 @@ namespace Recurly
         {
             get { return _unitAmountInCents ?? (_unitAmountInCents = new Dictionary<string, int>()); }
         }
+
+
+        public int DefaultQuantity { get; set; }
+        public bool? DisplayQuantityOnHostedPage { get; set; }
+        public DateTime CreatedAt { get; private set; }
+
 
         private const string UrlPrefix = "/plans/";
         private const string UrlPostfix = "/add_ons/";
@@ -64,7 +55,7 @@ namespace Recurly
         public void Create()
         {
             Client.Instance.PerformRequest(Client.HttpRequestMethod.Post,
-                UrlPrefix + Uri.EscapeDataString(PlanCode) + UrlPostfix,
+                UrlPrefix + Uri.EscapeUriString(PlanCode) + UrlPostfix,
                 WriteXml,
                 ReadXml);
         }
@@ -75,7 +66,7 @@ namespace Recurly
         public void Update()
         {
             Client.Instance.PerformRequest(Client.HttpRequestMethod.Put,
-                UrlPrefix + Uri.EscapeDataString(PlanCode) + UrlPostfix + Uri.EscapeDataString(AddOnCode),
+                UrlPrefix + Uri.EscapeUriString(PlanCode) + UrlPostfix + Uri.EscapeUriString(AddOnCode),
                 WriteXml,
                 ReadXml);
         }
@@ -86,7 +77,7 @@ namespace Recurly
         public void Delete()
         {
             Client.Instance.PerformRequest(Client.HttpRequestMethod.Delete,
-                UrlPrefix + Uri.EscapeDataString(PlanCode) + UrlPostfix + Uri.EscapeDataString(AddOnCode));
+                UrlPrefix + Uri.EscapeUriString(PlanCode) + UrlPostfix + Uri.EscapeUriString(AddOnCode));
         }
 
 
@@ -119,12 +110,9 @@ namespace Recurly
 
                 switch (reader.Name)
                 {
+
                     case "add_on_code":
                         AddOnCode = reader.ReadElementContentAsString();
-                        break;
-
-                    case "accounting_code":
-                        AccountingCode = reader.ReadElementContentAsString();
                         break;
 
                     case "name":
@@ -139,39 +127,14 @@ namespace Recurly
                         DefaultQuantity = reader.ReadElementContentAsInt();
                         break;
 
-                    case "optional":
-                        Optional = reader.ReadElementContentAsBoolean();
-                        break;
-
                     case "created_at":
                         CreatedAt = reader.ReadElementContentAsDateTime();
-                        break;
-
-                    case "updated_at":
-                        UpdatedAt = reader.ReadElementContentAsDateTime();
                         break;
 
                     case "unit_amount_in_cents":
                         ReadXmlUnitAmount(reader);
                         break;
 
-                    case "tax_code":
-                        TaxCode = reader.ReadElementContentAsString();
-                        break;
-
-                    case "add_on_type":
-                        AddOnType = reader.ReadElementContentAsString().ParseAsEnum<Type>();
-                        break;
-
-                    case "usage_type":
-                        UsageType = reader.ReadElementContentAsString().ParseAsEnum<Usage.Type>();
-                        break;
-
-                    case "revenue_schedule_type":
-                        var revenueScheduleType = reader.ReadElementContentAsString();
-                        if (!revenueScheduleType.IsNullOrEmpty())
-                            RevenueScheduleType = revenueScheduleType.ParseAsEnum<Adjustment.RevenueSchedule>();
-                        break;
                 }
             }
         }
@@ -182,34 +145,13 @@ namespace Recurly
 
             xmlWriter.WriteElementString("add_on_code", AddOnCode);
             xmlWriter.WriteElementString("name", Name);
-            xmlWriter.WriteElementString("accounting_code", AccountingCode);
-
-            if (DefaultQuantity.HasValue)
-                xmlWriter.WriteElementString("default_quantity", DefaultQuantity.Value.AsString());
-
-            if (AddOnType.HasValue)
-                xmlWriter.WriteElementString("add_on_type", AddOnType.Value.ToString().EnumNameToTransportCase());
-
-            if (UsageType.HasValue)
-                xmlWriter.WriteElementString("usage_type", UsageType.Value.ToString().EnumNameToTransportCase());
-
-            if (MeasuredUnitId.HasValue)
-                xmlWriter.WriteElementString("measured_unit_id", MeasuredUnitId.ToString());
-
-            if (DisplayQuantityOnHostedPage.HasValue)
-                xmlWriter.WriteElementString("display_quantity_on_hosted_page", DisplayQuantityOnHostedPage.Value.AsString());
-
-            if (Optional.HasValue)
-                xmlWriter.WriteElementString("optional", Optional.Value.AsString());
 
             xmlWriter.WriteIfCollectionHasAny("unit_amount_in_cents", UnitAmountInCents, pair => pair.Key,
                 pair => pair.Value.AsString());
 
-            if (RevenueScheduleType.HasValue)
-                xmlWriter.WriteElementString("revenue_schedule_type", RevenueScheduleType.Value.ToString().EnumNameToTransportCase());
-
             xmlWriter.WriteEndElement();
         }
+
 
         #endregion
 
@@ -217,25 +159,23 @@ namespace Recurly
 
         public override string ToString()
         {
-            return "Recurly Plan AddOn: " + AddOnCode;
+            return "Recurly Plan: " + PlanCode;
         }
 
         public override bool Equals(object obj)
         {
-            var addon = obj as AddOn;
-            return addon != null && Equals(addon);
+            var plan = obj as Plan;
+            return plan != null && Equals(plan);
         }
 
-        public bool Equals(AddOn addon)
+        public bool Equals(Plan plan)
         {
-            return PlanCode == addon.PlanCode && AddOnCode == addon.AddOnCode;
+            return PlanCode == plan.PlanCode;
         }
 
         public override int GetHashCode()
         {
-            var planCodeHash = PlanCode?.GetHashCode() ?? 0;
-            var addOnCodeHash = AddOnCode?.GetHashCode() ?? 0;
-            return planCodeHash + addOnCodeHash;
+            return PlanCode.GetHashCode();
         }
 
         #endregion

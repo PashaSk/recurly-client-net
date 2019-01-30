@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Infratel.Utils.Text;
+using System;
 using System.Collections.Generic;
 using System.Xml;
 
@@ -42,8 +43,7 @@ namespace Recurly
         }
 
         /// <summary>
-        /// If the given collection has any elements, writes the contents of the <paramref name="items"/> to the <see cref="T:System.Xml.XmlTextWriter"/> 
-        /// using each element's <see cref="Recurly.RecurlyEntity.WriteXml"/> implementation.
+        /// If the given collection has any elements, writes the contents of the <paramref name="items"/> to the <see cref="T:System.Xml.XmlTextWriter"/> using each element's <see cref="Recurly.RecurlyEntity.WriteXml"/> implementation.
         /// </summary>
         /// <typeparam name="T">The type of each element of <paramref name="items"/>, derived from <see cref="Recurly.RecurlyEntity"/>.</typeparam>
         /// <param name="writer">The <see cref="T:System.Xml.XmlTextWriter"/> to write to.</param>
@@ -53,27 +53,25 @@ namespace Recurly
             where T : RecurlyEntity
         {
             if (!items.HasAny()) return;
-            WriteCollection(writer, collectionName, items);
+            writer.WriteStartElement(collectionName);
+            foreach (var item in items)
+            {
+                item.WriteXml(writer);
+            }
+            writer.WriteEndElement();
         }
 
+        //Added by SergeyK
         /// <summary>
-        /// If the given collection has any elements, writes the contents of the <paramref name="items"/> to the <see cref="T:System.Xml.XmlTextWriter"/> 
-        /// using each element's <see cref="Recurly.RecurlyEntity.WriteXml"/> implementation. If the collection needs to write an empty element for an empty collection, it will do so.
+        /// Whatever number of elements the collection has, writes the contents of the <paramref name="items"/> to the <see cref="T:System.Xml.XmlTextWriter"/> using each element's <see cref="Recurly.RecurlyEntity.WriteXml"/> implementation.
         /// </summary>
         /// <typeparam name="T">The type of each element of <paramref name="items"/>, derived from <see cref="Recurly.RecurlyEntity"/>.</typeparam>
         /// <param name="writer">The <see cref="T:System.Xml.XmlTextWriter"/> to write to.</param>
         /// <param name="collectionName">The value to use for the encompassing XML tag if the collection is written.</param>
         /// <param name="items">The collection to test and then write if it has any elements.</param>
-        public static void WriteIfCollectionHasAny<T>(this XmlTextWriter writer, string collectionName, RecurlyList<T> items)
+        public static void WriteCollection<T>(this XmlTextWriter writer, string collectionName, IEnumerable<T> items)
             where T : RecurlyEntity
-        {
-            if (!items.includeEmptyTag() && !items.HasAny()) return;
-            WriteCollection(writer, collectionName, items);
-        }
-
-        private static void WriteCollection<T>(this XmlTextWriter writer, string collectionName, IEnumerable<T> items)
-            where T : RecurlyEntity
-        {
+        {            
             writer.WriteStartElement(collectionName);
             foreach (var item in items)
             {

@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Linq;
 using System.Xml;
+using Infratel.RecurlyLibrary;
 using HttpRequestMethod = Recurly.Client.HttpRequestMethod;
+using Infratel.Utils.HttpRetry;
+using Infratel.Utils.Text;
 
 namespace Recurly
 {
@@ -17,13 +19,18 @@ namespace Recurly
         protected string StartUrl { get; set; }
         protected string NextUrl { get; set; }
         protected string PrevUrl { get; set; }
-        protected int PerPage { get; set; }
 
         public int Count
         {
             get {
                 return Items.Count;
             }
+        }
+
+        private int _capacity = -1;
+        public int Capacity
+        {
+            get { return _capacity < 0 ? Count : _capacity; }
         }
 
         public abstract RecurlyList<T> Start { get; }
@@ -60,41 +67,38 @@ namespace Recurly
             return !PrevUrl.IsNullOrEmpty();
         }
 
-        public virtual bool includeEmptyTag()
-        {
-            return false;
-        }
-
         internal RecurlyList()
         {
-            PerPage = Client.Instance.Settings.PageSize;
         }
 
         internal RecurlyList(HttpRequestMethod method, string url)
         {
-            PerPage = Client.Instance.Settings.PageSize;
             Method = method;
             BaseUrl = url;
 
             GetItems();
         }
 
-        public void GetItems()
+        protected void GetItems()
         {
-            Client.Instance.PerformRequest(Method,
-                ApplyPaging(BaseUrl),
-                ReadXmlList);
+			MightyCallExtensions.RecurlyWithRetries().ExecuteAction(() =>
+            {
+				Client.Instance.PerformRequest(Method,
+					ApplyPaging(BaseUrl),
+					ReadXmlList);
+			});
         }
 
         protected string ApplyPaging(string baseUrl)
         {
             var divider = baseUrl.Contains("?") ? "&" : "?";
-            return baseUrl + divider + "per_page=" + PerPage;
+            return baseUrl + divider + "per_page=" + Client.Instance.Settings.PageSize;
         }
 
-        internal void ReadXmlList(XmlTextReader xmlReader, string start, string next, string prev)
+        internal void ReadXmlList(XmlTextReader xmlReader, int records, string start, string next, string prev)
         {
-            Items = new List<T>();
+            Items = records > 0 ? new List<T>(records) : new List<T>();
+            _capacity = records;
             StartUrl = start;
             NextUrl = next;
             PrevUrl = prev;
@@ -169,7 +173,11 @@ namespace Recurly
         {
             return Items.Remove(item);
         }
-        internal int RemoveAll(Predicate<T> match)
+
+        //changed to public by SergeyK
+        //the method RemoveAll was internal initially, but I changed it. Anyway it appears similar to RemoveAt which is originally public
+        //internal int RemoveAll(Predicate<T> match)
+        public  int RemoveAll(Predicate<T> match)
         {
             return Items.RemoveAll(match);
         }
@@ -223,18 +231,6 @@ namespace Recurly
 
     public class RecurlyList
     {
-        public enum Sort
-        {
-            CreatedAt,
-            UpdatedAt
-        }
-
-        public enum Order
-        {
-            Asc,
-            Desc
-        }
-
         public static RecurlyList<T> Empty<T>() where T : RecurlyEntity
         {
             return EmptyRecurlyList<T>.Instance;

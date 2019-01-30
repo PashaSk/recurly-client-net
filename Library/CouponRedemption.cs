@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Xml;
 
 namespace Recurly
@@ -8,6 +8,9 @@ namespace Recurly
     /// </summary>
     public class CouponRedemption : RecurlyEntity
     {
+        public const string ActiveStatus = "active";
+
+        internal const string UrlPrefix = "/accounts/";
 
         public string Uuid { get; private set; }
         public string AccountCode { get; set; }
@@ -18,12 +21,11 @@ namespace Recurly
         public int TotalDiscountedInCents { get; private set; }
 
         public DateTime CreatedAt { get; private set; }
-        public DateTime UpdatedAt { get; private set; }
 
         public string State { get; private set; }
 
-        public string SubscriptionUuid {get; set; }
-
+        public string SubscriptionUuid { get; set; }
+        
         internal CouponRedemption(XmlTextReader reader)
             : this()
         {
@@ -41,12 +43,14 @@ namespace Recurly
         /// </summary>
         /// <param name="accountCode"></param>
         /// <param name="currency"></param>
-        internal static CouponRedemption Redeem(string accountCode, string couponCode, string currency, string subscriptionUuid=null)
+        internal static CouponRedemption Redeem(string accountCode, string couponCode, string currency, string subscriptionUuid = null)
         {
-            var cr = new CouponRedemption {AccountCode = accountCode, Currency = currency, SubscriptionUuid = subscriptionUuid};
+            var cr = new CouponRedemption { AccountCode = accountCode, Currency = currency, SubscriptionUuid = subscriptionUuid };
 
             var statusCode = Client.Instance.PerformRequest(Client.HttpRequestMethod.Post,
-               "/coupons/" + Uri.EscapeDataString(couponCode) + "/redeem",
+               "/coupons/" 
+               + Uri.EscapeUriString(couponCode) 
+               + "/redeem",
                cr.WriteXml,
                cr.ReadXml);
 
@@ -59,16 +63,22 @@ namespace Recurly
         /// </summary>
         public void Delete()
         {
-            var statusCode = Client.Instance.PerformRequest(Client.HttpRequestMethod.Delete,
-                "/accounts/" + Uri.EscapeDataString(AccountCode) +
-                "/redemptions/" + Uri.EscapeDataString(Uuid));
+            var statusCode = Client.Instance.PerformRequest(Client.HttpRequestMethod.Delete, UrlPrefix 
+                + Uri.EscapeUriString(AccountCode) 
+                + "/redemptions/" 
+                + Uri.EscapeUriString(Uuid));
+
             AccountCode = null;
             CouponCode = null;
             Currency = null;
         }
 
-
-
+        public static RecurlyList<CouponRedemption> GetAccountRedemptionsList(string accountCode)
+        {
+            return new CouponRedemptionList(string.Format("{0}{1}{2}",
+                UrlPrefix, Uri.EscapeUriString(accountCode), "/redemptions"));
+        }
+        
         #region Read and Write XML documents
 
         internal override void ReadXml(XmlTextReader reader)
@@ -95,7 +105,7 @@ namespace Recurly
 
                     case "coupon":
                         href = reader.GetAttribute("href");
-                        CouponCode =Uri.UnescapeDataString( href.Substring(href.LastIndexOf("/") + 1));
+                        CouponCode = Uri.UnescapeDataString(href.Substring(href.LastIndexOf("/") + 1));
                         break;
 
                     case "single_use":
@@ -121,12 +131,11 @@ namespace Recurly
                         break;
 
                     case "created_at":
-                        CreatedAt = reader.ReadElementContentAsDateTime();
+                        DateTime date;
+                        if (DateTime.TryParse(reader.ReadElementContentAsString(), out date))
+                            CreatedAt = date;
                         break;
 
-                    case "updated_at":
-                        UpdatedAt = reader.ReadElementContentAsDateTime();
-                        break;
                 }
             }
         }
@@ -169,7 +178,5 @@ namespace Recurly
         }
 
         #endregion
-
-        
     }
 }

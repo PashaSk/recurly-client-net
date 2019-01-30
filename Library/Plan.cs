@@ -27,34 +27,19 @@ namespace Recurly
         public string UnitName { get; set; }
         public string PaymentPageTOSLink { get; set; }
 
-        public int? PlanIntervalLength { get; set; }
+        public int PlanIntervalLength { get; set; }
         public IntervalUnit PlanIntervalUnit { get; set; }
 
-        public int? TrialIntervalLength { get; set; }
+        public int TrialIntervalLength { get; set; }
         public IntervalUnit TrialIntervalUnit { get; set; }
 
         public string AccountingCode { get; set; }
-        public string SetupFeeAccountingCode { get; set; }
 
         public DateTime CreatedAt { get; private set; }
-        public DateTime UpdatedAt { get; private set; }
 
         public int? TotalBillingCycles { get; set; }
 
         public bool? TaxExempt { get; set; }
-
-        public string TaxCode { get; set; }
-
-        public bool? TrialRequiresBillingInfo { get; set; }
-
-        /// <summary>
-        /// Determines whether subscriptions to this plan should auto-renew term at the end of the current term or expire.
-        /// Defaults to true.
-        /// </summary>
-        public bool? AutoRenew { get; set; }
-
-        public Adjustment.RevenueSchedule? RevenueScheduleType { get; set; }
-        public Adjustment.RevenueSchedule? SetupFeeRevenueScheduleType { get; set; }
 
         private AddOnList _addOns;
 
@@ -64,7 +49,7 @@ namespace Recurly
             {
                 if (_addOns == null)
                 {
-                    var url = UrlPrefix + Uri.EscapeDataString(PlanCode) + "/add_ons/";
+                    var url = UrlPrefix + Uri.EscapeUriString(PlanCode) + "/add_ons/";
                     _addOns = new AddOnList(url);
                 }
                 return _addOns;
@@ -126,7 +111,7 @@ namespace Recurly
         public void Update()
         {
             Client.Instance.PerformRequest(Client.HttpRequestMethod.Put,
-                UrlPrefix + Uri.EscapeDataString(PlanCode),
+                UrlPrefix + Uri.EscapeUriString(PlanCode),
                 WriteXml);
         }
 
@@ -135,7 +120,7 @@ namespace Recurly
         /// </summary>
         public void Deactivate()
         {
-            Client.Instance.PerformRequest(Client.HttpRequestMethod.Delete, UrlPrefix + Uri.EscapeDataString(PlanCode));
+            Client.Instance.PerformRequest(Client.HttpRequestMethod.Delete, UrlPrefix + Uri.EscapeUriString(PlanCode));
         }
 
         /// <summary>
@@ -152,25 +137,13 @@ namespace Recurly
 
         public AddOn GetAddOn(string addOnCode)
         {
-            if (string.IsNullOrWhiteSpace(addOnCode))
-            {
-                return null;
-            }
-
             var addOn = new AddOn();
 
             var status = Client.Instance.PerformRequest(Client.HttpRequestMethod.Get,
-                UrlPrefix + Uri.EscapeDataString(PlanCode) + "/add_ons/" + Uri.EscapeDataString(addOnCode),
+                UrlPrefix + Uri.EscapeUriString(PlanCode) + "/add_ons/" + Uri.EscapeUriString(addOnCode),
                 addOn.ReadXml);
 
-            if (status != HttpStatusCode.OK) return null;
-
-            // PlanCode is needed to update the AddOn
-            // TODO: need a cleaner way of getting the plan code from xml
-            //       should be using the hrefs of the resources
-            addOn.PlanCode = PlanCode;
-
-            return addOn;
+            return status == HttpStatusCode.OK ? addOn : null;
         }
 
         #region Read and Write XML documents
@@ -217,8 +190,6 @@ namespace Recurly
                     break;
 
                 if (reader.NodeType != XmlNodeType.Element) continue;
-
-                bool b;
 
                 switch (reader.Name)
                 {
@@ -286,24 +257,12 @@ namespace Recurly
                         AccountingCode = reader.ReadElementContentAsString();
                         break;
 
-                    case "setup_fee_accounting_code":
-                        SetupFeeAccountingCode = reader.ReadElementContentAsString();
-                        break;
-
                     case "created_at":
                         CreatedAt = reader.ReadElementContentAsDateTime();
                         break;
 
-                    case "updated_at":
-                        UpdatedAt = reader.ReadElementContentAsDateTime();
-                        break;
-
                     case "tax_exempt":
                         TaxExempt = reader.ReadElementContentAsBoolean();
-                        break;
-
-                    case "tax_code":
-                        TaxCode = reader.ReadElementContentAsString();
                         break;
 
                     case "unit_amount_in_cents":
@@ -312,34 +271,6 @@ namespace Recurly
 
                     case "setup_fee_in_cents":
                         ReadXmlSetupFee(reader);
-                        break;
-
-                    case "total_billing_cycles":
-                        int totalBillingCycles;
-                        if (int.TryParse(reader.ReadElementContentAsString(), out totalBillingCycles))
-                            TotalBillingCycles = totalBillingCycles;
-                        break;
-
-                    case "trial_requires_billing_info":
-                        if (bool.TryParse(reader.ReadElementContentAsString(), out b))
-                            TrialRequiresBillingInfo = b;
-                        break;
-
-                    case "revenue_schedule_type":
-                        var revenueScheduleType = reader.ReadElementContentAsString();
-                        if (!revenueScheduleType.IsNullOrEmpty())
-                            RevenueScheduleType = revenueScheduleType.ParseAsEnum<Adjustment.RevenueSchedule>();
-                        break;
-
-                    case "setup_fee_revenue_schedule_type":
-                        var setupFeeRevenueScheduleType = reader.ReadElementContentAsString();
-                        if (!setupFeeRevenueScheduleType.IsNullOrEmpty())
-                            SetupFeeRevenueScheduleType = setupFeeRevenueScheduleType.ParseAsEnum<Adjustment.RevenueSchedule>();
-                        break;
-
-                    case "auto_renew":
-                        if (bool.TryParse(reader.ReadElementContentAsString(), out b))
-                            AutoRenew = b;
                         break;
                 }
             }
@@ -353,16 +284,15 @@ namespace Recurly
             xmlWriter.WriteElementString("name", Name);
             xmlWriter.WriteStringIfValid("description", Description);
             xmlWriter.WriteStringIfValid("accounting_code", AccountingCode);
-            xmlWriter.WriteStringIfValid("setup_fee_accounting_code", SetupFeeAccountingCode);
-            if (PlanIntervalLength.HasValue)
+            if (PlanIntervalLength > 0)
             {
                 xmlWriter.WriteElementString("plan_interval_unit", PlanIntervalUnit.ToString().EnumNameToTransportCase());
-                xmlWriter.WriteElementString("plan_interval_length", PlanIntervalLength.Value.AsString());
+                xmlWriter.WriteElementString("plan_interval_length", PlanIntervalLength.AsString());
             }
-            if (TrialIntervalLength.HasValue)
+            if (TrialIntervalLength > 0)
             {
                 xmlWriter.WriteElementString("trial_interval_unit", TrialIntervalUnit.ToString().EnumNameToTransportCase());
-                xmlWriter.WriteElementString("trial_interval_length", TrialIntervalLength.Value.AsString());
+                xmlWriter.WriteElementString("trial_interval_length", TrialIntervalLength.AsString());
             }
 
             xmlWriter.WriteIfCollectionHasAny("setup_fee_in_cents", SetupFeeInCents, pair => pair.Key, pair => pair.Value.AsString());
@@ -386,24 +316,12 @@ namespace Recurly
             if (BypassHostedConfirmation.HasValue)
                 xmlWriter.WriteElementString("bypass_hosted_confirmation", BypassHostedConfirmation.Value.AsString());
 
-            if (TaxExempt.HasValue)
+            if(TaxExempt.HasValue)
                 xmlWriter.WriteElementString("tax_exempt", TaxExempt.Value.AsString());
-
-            if (TrialRequiresBillingInfo.HasValue)
-                xmlWriter.WriteElementString("trial_requires_billing_info", TrialRequiresBillingInfo.Value.AsString());
 
             xmlWriter.WriteStringIfValid("success_url", SuccessUrl);
             xmlWriter.WriteStringIfValid("cancel_url", CancelUrl);
 
-            if (RevenueScheduleType.HasValue)
-                xmlWriter.WriteElementString("revenue_schedule_type", RevenueScheduleType.Value.ToString().EnumNameToTransportCase());
-
-            if (SetupFeeRevenueScheduleType.HasValue)
-                xmlWriter.WriteElementString("setup_fee_revenue_schedule_type", SetupFeeRevenueScheduleType.Value.ToString().EnumNameToTransportCase());
-
-            if (AutoRenew.HasValue)
-                xmlWriter.WriteElementString("auto_renew", AutoRenew.Value.AsString());
-        
             xmlWriter.WriteEndElement();
         }
 
@@ -430,7 +348,7 @@ namespace Recurly
 
         public override int GetHashCode()
         {
-            return PlanCode?.GetHashCode() ?? 0;
+            return PlanCode.GetHashCode();
         }
 
         #endregion
@@ -444,19 +362,7 @@ namespace Recurly
         /// <returns></returns>
         public static RecurlyList<Plan> List()
         {
-            return List(null);
-        }
-
-        /// <summary>
-        /// Lists accounts, limited to state
-        /// </summary>
-        /// <param name="state">Account state to retrieve</param>
-        /// <param name="filter">FilterCriteria used to apply server side sorting and filtering</param>
-        /// <returns></returns>
-        public static RecurlyList<Plan> List(FilterCriteria filter)
-        {
-            filter = filter == null ? FilterCriteria.Instance : filter;
-            return new PlanList(Plan.UrlPrefix + "?" + filter.ToNamedValueCollection().ToString());
+            return new PlanList(Plan.UrlPrefix);
         }
 
         /// <summary>
@@ -466,15 +372,10 @@ namespace Recurly
         /// <returns></returns>
         public static Plan Get(string planCode)
         {
-            if (string.IsNullOrWhiteSpace(planCode))
-            {
-                return null;
-            }
-
             var plan = new Plan();
 
             var statusCode = Client.Instance.PerformRequest(Client.HttpRequestMethod.Get,
-                Plan.UrlPrefix + Uri.EscapeDataString(planCode),
+                Plan.UrlPrefix + Uri.EscapeUriString(planCode),
                 plan.ReadXml);
 
             return statusCode == HttpStatusCode.NotFound ? null : plan;

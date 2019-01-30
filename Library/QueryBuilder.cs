@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using Infratel.Utils.Text;
+using System.Text;
 
 namespace Recurly
 {

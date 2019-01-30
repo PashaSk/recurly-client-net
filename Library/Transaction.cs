@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Net;
 using System.Xml;
-using System.Text.RegularExpressions;
+using Infratel.RecurlyLibrary;
 
 namespace Recurly
 {
@@ -15,12 +15,7 @@ namespace Recurly
             Success,
             Failed,
             Voided,
-            Declined,
-            Scheduled,
-            Pending,
-            Processing,
-            Error,
-            Chargeback
+            Declined
         }
 
         public enum TransactionType : short
@@ -30,8 +25,7 @@ namespace Recurly
             Authorization,
             Purchase,
             Refund,
-            Verify,
-            Capture
+            Verify
         }
 
         public string Uuid { get; private set; }
@@ -39,8 +33,6 @@ namespace Recurly
         public int AmountInCents { get; set; }
         public int TaxInCents { get; set; }
         public string Currency { get; set; }
-        public string Description { get; set; }
-        public string PaymentMethod { get; set; }
 
         public TransactionState Status { get; private set; }
 
@@ -50,28 +42,19 @@ namespace Recurly
         public bool Voidable { get; private set; }
         public bool Refundable { get; private set; }
 
-        public string IpAddress { get; private set; }
-
         public string CCVResult { get; private set; }
         public string AvsResult { get; private set; }
         public string AvsResultStreet { get; private set; }
         public string AvsResultPostal { get; private set; }
 
+        public int? GatewayErrorCode { get; private set; }
+        public FailureType FailureType { get; private set; }
+
         public DateTime CreatedAt { get; private set; }
-        public DateTime UpdatedAt { get; private set; }
 
         private Account _account;
 
         public string AccountCode { get; private set; }
-
-        public Boolean TaxExempt { get; set; }
-        public string TaxCode { get; set; }
-        public string AccountingCode { get; set; }
-        public string GatewayType { get; set; }
-        public string Origin { get; set; }
-        public string Message { get; set; }
-        public string ApprovalCode { get; set; }
-        public DateTime CollectedAt { get; set; }
 
         public Account Account
         {
@@ -83,13 +66,10 @@ namespace Recurly
             }
         }
         public int? Invoice { get; private set; }
-        public string InvoicePrefix { get; private set; }
 
+        public string Description { get; set; }
+        public string Source { get; private set; }
 
-        public string InvoiceNumberWithPrefix()
-        {
-            return InvoicePrefix + Convert.ToString(Invoice);
-        }
 
         internal Transaction()
         { }
@@ -132,27 +112,22 @@ namespace Recurly
         /// </summary>
         public void Create()
         {
-            Client.Instance.PerformRequest(Client.HttpRequestMethod.Post,
-               UrlPrefix,
-               WriteXml,
-               ReadXml);
+             Client.Instance.PerformRequest(Client.HttpRequestMethod.Post,
+                UrlPrefix,
+                WriteXml,
+                ReadXml);
         }
 
         /// <summary>
         /// Refunds a transaction
-        ///
+        /// 
         /// </summary>
         /// <param name="refund">If present, the amount to refund. Otherwise it is a full refund.</param>
         public void Refund(int? refund = null)
         {
             Client.Instance.PerformRequest(Client.HttpRequestMethod.Delete,
-                UrlPrefix + Uri.EscapeDataString(Uuid) + (refund.HasValue ? "?amount_in_cents=" + refund.Value : ""),
+                UrlPrefix + Uri.EscapeUriString(Uuid) + (refund.HasValue ? "?amount_in_cents=" + refund.Value : ""),
                 ReadXml);
-        }
-
-        public Invoice GetInvoice()
-        {
-            return Invoices.Get(InvoiceNumberWithPrefix());
         }
 
 
@@ -176,32 +151,13 @@ namespace Recurly
                     case "account":
                         href = reader.GetAttribute("href");
                         if (null != href)
-                        {
                             AccountCode = Uri.UnescapeDataString(href.Substring(href.LastIndexOf("/") + 1));
-                        } 
-                        else
-                        {
-                            Account = new Account(reader);
-                        }
                         break;
 
                     case "invoice":
                         href = reader.GetAttribute("href");
                         if (null != href)
-                        {
-                            string invoiceNumber = href.Substring(href.LastIndexOf("/") + 1);
-                            MatchCollection matches = Regex.Matches(invoiceNumber, "([^\\d]{2})(\\d+)");
-
-                            if (matches.Count == 1)
-                            {
-                                InvoicePrefix = matches[0].Groups[1].Value;
-                                Invoice = int.Parse(matches[0].Groups[2].Value);
-                            }
-                            else
-                            {
-                                Invoice = int.Parse(invoiceNumber);
-                            }
-                        }
+                            Invoice = int.Parse(href.Substring(href.LastIndexOf("/") + 1));
                         break;
 
                     case "uuid":
@@ -226,14 +182,6 @@ namespace Recurly
                         Currency = reader.ReadElementContentAsString();
                         break;
 
-                    case "description":
-                        Description = reader.ReadElementContentAsString();
-                        break;
-
-                    case "payment_method":
-                        PaymentMethod = reader.ReadElementContentAsString();
-                        break;
-
                     case "status":
                         var state = reader.ReadElementContentAsString();
                         Status = "void" == state ? TransactionState.Voided : state.ParseAsEnum<TransactionState>();
@@ -248,15 +196,11 @@ namespace Recurly
                         break;
 
                     case "voidable":
-                        Voidable = reader.ReadElementContentAsBoolean();
+                        Voidable =  reader.ReadElementContentAsBoolean();
                         break;
 
                     case "refundable":
-                        Refundable = reader.ReadElementContentAsBoolean();
-                        break;
-
-                    case "ip_address":
-                        IpAddress = reader.ReadElementContentAsString();
+                        Refundable =  reader.ReadElementContentAsBoolean();
                         break;
 
                     case "ccv_result":
@@ -276,37 +220,78 @@ namespace Recurly
                         break;
 
                     case "created_at":
-                        CreatedAt = reader.ReadElementContentAsDateTime();
+                        DateTime date;
+                        if (DateTime.TryParse(reader.ReadElementContentAsString(), out date))
+                            CreatedAt = date;
                         break;
 
-                    case "updated_at":
-                        UpdatedAt = reader.ReadElementContentAsDateTime();
+                    case "source":
+                        Source = reader.ReadElementContentAsString();
                         break;
-
+                       
                     case "details":
                         // API docs say not to load details into objects
+                        // Alexey Popov: we should just "parse" it to ignore all embedded shit
+                        var details = new Details();
+                        details.ReadXml(reader);
                         break;
 
-                    case "gateway_type":
-                        GatewayType = reader.ReadElementContentAsString();
-                        break;
-
-                    case "origin":
-                        Origin = reader.ReadElementContentAsString();
-                        break;
-                    case "message":
-                        Message = reader.ReadElementContentAsString();
-                        break;
-                    case "approval_code":
-                        ApprovalCode = reader.ReadElementContentAsString();
-                        break;
-                    case "collected_at":
-                        DateTime d;
-                        if (DateTime.TryParse(reader.ReadElementContentAsString(), out d))
+                    case "gateway_error_code":
                         {
-                            CollectedAt = d;
+                            int code;
+                            var value = reader.ReadElementContentAsString();
+                            if (int.TryParse(value, out code))
+                            {
+                                GatewayErrorCode = code;
+                            }
                         }
                         break;
+                    case "customer_message":
+                        {
+                            string value = reader.ReadElementContentAsString();
+                            if (!string.IsNullOrWhiteSpace(value))
+                            {
+                                if (FailureType == null)
+                                    FailureType = new FailureType(string.Empty);
+
+                                FailureType.CustomerMessage = value;
+                            }
+                        }
+                        break;
+                    case "merchant_message":
+                        {
+                            string value = reader.ReadElementContentAsString();
+                            if (!string.IsNullOrWhiteSpace(value))
+                            {
+                                if (FailureType == null)
+                                    FailureType = new FailureType(string.Empty);
+
+                                FailureType.MerchantMessage = value;
+                            }
+                        }
+                        break;
+                    case "error_code":
+                        {
+                            string value = reader.ReadElementContentAsString();
+                            if (!string.IsNullOrWhiteSpace(value))
+                            {
+                                if (FailureType == null)
+                                    FailureType = new FailureType(value);
+                                else
+                                    FailureType.Failure = value;
+
+                                // when our testers will do test using fake bad card -> there will be no gateway code (because transaction si fake)... 
+                                // assume what if we have error code -> gateway error must be setuped by me
+                                if (!GatewayErrorCode.HasValue)
+                                {
+                                    GatewayErrorCode = 2; // simple declined
+                                }
+                            }
+
+
+                        }
+                        break;
+
                 }
             }
         }
@@ -317,31 +302,14 @@ namespace Recurly
 
             xmlWriter.WriteElementString("amount_in_cents", AmountInCents.AsString());
             xmlWriter.WriteElementString("currency", Currency);
-            xmlWriter.WriteStringIfValid("description", Description);
-            xmlWriter.WriteStringIfValid("payment_method", PaymentMethod);
-
-            xmlWriter.WriteElementString("tax_exempt", TaxExempt.AsString().ToLower());
-            xmlWriter.WriteStringIfValid("tax_code", TaxCode);
-            xmlWriter.WriteStringIfValid("accounting_code", AccountingCode);
+            xmlWriter.WriteElementString("description", Description);
 
             if (Account != null)
             {
                 Account.WriteXml(xmlWriter);
             }
 
-            xmlWriter.WriteEndElement();
-        }
-
-        internal void WriteOfflinePaymentXml(XmlTextWriter xmlWriter)
-        {
-            xmlWriter.WriteStartElement("transaction");
-
-            xmlWriter.WriteStringIfValid("payment_method", PaymentMethod);
-            xmlWriter.WriteElementString("collected_at", CollectedAt.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"));
-            xmlWriter.WriteElementString("amount_in_cents", AmountInCents.AsString());
-            xmlWriter.WriteStringIfValid("description", Description);
-
-            xmlWriter.WriteEndElement();
+            xmlWriter.WriteEndElement(); 
         }
 
         #endregion
@@ -366,7 +334,7 @@ namespace Recurly
 
         public override int GetHashCode()
         {
-            return Uuid?.GetHashCode() ?? 0;
+            return Uuid.GetHashCode();
         }
 
         #endregion
@@ -384,45 +352,18 @@ namespace Recurly
         public static RecurlyList<Transaction> List(TransactionList.TransactionState state = TransactionList.TransactionState.All,
             TransactionList.TransactionType type = TransactionList.TransactionType.All)
         {
-            return List(state, type, null);
-        }
-
-        /// <summary>
-        /// Lists transactions by state and type. Defaults to all.
-        /// </summary>
-        /// <param name="state"></param>
-        /// <param name="type"></param>
-        /// <param name="filter">FilterCriteria used to apply server side sorting and filtering</param>
-        /// <returns></returns>
-        public static RecurlyList<Transaction> List(TransactionList.TransactionState state,
-            TransactionList.TransactionType type,
-            FilterCriteria filter)
-        {
-            filter = filter ?? FilterCriteria.Instance;
-            var parameters = filter.ToNamedValueCollection();
-            if (state != TransactionList.TransactionState.All)
-            {
-                parameters["state"] = state.ToString().EnumNameToTransportCase();
-            }
-            if (type != TransactionList.TransactionType.All)
-            {
-                parameters["type"] = type.ToString().EnumNameToTransportCase();
-            }
-
-            return new TransactionList(Transaction.UrlPrefix + "?" + parameters.ToString());
+            return new TransactionList("/transactions/" +
+                Build.QueryStringWith(state != TransactionList.TransactionState.All ? "state=" +state.ToString().EnumNameToTransportCase() : "")
+                .AndWith(type != TransactionList.TransactionType.All ? "type=" +type.ToString().EnumNameToTransportCase() : "")
+            );
         }
 
         public static Transaction Get(string transactionId)
         {
-            if (string.IsNullOrWhiteSpace(transactionId))
-            {
-                return null;
-            }
-
             var transaction = new Transaction();
 
             var statusCode = Client.Instance.PerformRequest(Client.HttpRequestMethod.Get,
-                Transaction.UrlPrefix + Uri.EscapeDataString(transactionId),
+                Transaction.UrlPrefix + Uri.EscapeUriString(transactionId),
                 transaction.ReadXml);
 
             return statusCode == HttpStatusCode.NotFound ? null : transaction;

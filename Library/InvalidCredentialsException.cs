@@ -5,11 +5,7 @@
     /// </summary>
     public class InvalidCredentialsException : RecurlyException
     {
-        public InvalidCredentialsException()
-            : base("The API credentials for Recurly are invalid. Please check the credentials and try again.")
-        { }
-
-        internal InvalidCredentialsException(Errors errors)
+        internal InvalidCredentialsException(Error[] errors)
             : base("The API credentials for Recurly are invalid. Please check the credentials and try again.", errors)
         { }
     }
