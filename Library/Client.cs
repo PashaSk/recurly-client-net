@@ -4,7 +4,10 @@ using System.IO;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml;
+using System.Web;
+using Infratel.Utils.Text;
 using Recurly.Configuration;
 
 [assembly: InternalsVisibleTo("Recurly.Test")]
@@ -18,6 +21,8 @@ namespace Recurly
     {
         // refactored all these settings for increased testability
         public Settings Settings { get; protected set; }
+
+        public const int TooManyRequestHttpStatus = 429;        
 
         private static Client _instance;
         internal static Client Instance

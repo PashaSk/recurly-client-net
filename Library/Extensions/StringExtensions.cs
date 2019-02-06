@@ -1,3 +1,4 @@
+using Infratel.Utils.Text;
 using System;
 using System.Linq;
 using System.Text;
@@ -15,16 +16,6 @@ namespace Recurly
         public static bool IsNullOrEmpty(this string source)
         {
             return string.IsNullOrEmpty(source);
-        }
-
-        /// <summary>
-        /// Determines if the given <see cref="System.String"/> is null or contains only whitespace.
-        /// </summary>
-        /// <param name="source">The <see cref="System.String"/> to test.</param>
-        /// <returns>true if the <see cref="System.String"/> <paramref name="source"/> is null or contains only whitespace, false otherwise.</returns>
-        public static bool IsNullOrWhiteSpace(this string source)
-        {
-            return source.SafeTrim().IsNullOrEmpty();
         }
 
         /// <summary>

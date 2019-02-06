@@ -169,7 +169,7 @@ namespace Recurly
         {
             return Items.Remove(item);
         }
-        internal int RemoveAll(Predicate<T> match)
+        public int RemoveAll(Predicate<T> match)
         {
             return Items.RemoveAll(match);
         }
